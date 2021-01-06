@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::io::Read;
-use std::str::FromStr;
 
 struct Todo {
     map: HashMap<String, bool>,
@@ -8,30 +6,23 @@ struct Todo {
 
 impl Todo {
     fn new() -> Result<Todo, std::io::Error> {
-        // open the db file
-        let mut f = std::fs::OpenOptions::new()
+        // open the db.json file
+        let f = std::fs::OpenOptions::new()
             .write(true)
             .create(true)
             .read(true)
-            .open("db.txt")?;
-        // read its content into a new string   
-        let mut content = String::new();
-        f.read_to_string(&mut content)?;
+            .open("db.json")?;
 
-        // convert from the String type of the file to a HashMap
-        let map: HashMap<String, bool> = content
-            // loop over each line of the file
-            .lines()
-            // split our lines on the tab character and
-            // map our Split string into Vec<&str>
-            .map(|line| line.splitn(2, '\t').collect::<Vec<&str>>())
-            // transform it into a tuple
-            .map(|v| (v[0], v[1]))
-            // convert the two elements of the tuple into a String and a bool
-            .map(|(k, v)| (String::from(k), bool::from_str(v).unwrap()))
-            .collect();
-        // Return Ok
-        Ok(Todo{ map })
+        // serialize JSON as HashMap
+        match serde_json::from_reader(f) {
+            Ok(map) => Ok(Todo { map }),
+            // Err(e) if e.is_eof() is a Match guard that lets us refine the behavior
+            // of the Match statement.
+            Err(e) if e.is_eof() => Ok(Todo {
+                map: HashMap::new(),
+            }),
+            Err(e) => panic!("An error occured: {}", e),
+        }
     }
 
     fn insert(&mut self, key: String) {
@@ -45,20 +36,22 @@ impl Todo {
         }
     }
 
-    fn save(self) -> Result<(), std::io::Error> {
-        let mut content = String::new();
-        for (k, v) in self.map {
-            let record = format!("{}\t{}\n", k,v);
-            content.push_str(&record)
-        }
-        std::fs::write("db.txt", content)
+    fn save(self) -> Result<(), Box<dyn std::error::Error>> {
+        // open db.json
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open("db.json")?;
+        // write to file with serde
+        serde_json::to_writer_pretty(f, &self.map)?;
+        Ok(())
     }
 }
 
 fn main() {
     let action = std::env::args().nth(1).expect("Please specify an action\n");
     let item = std::env::args().nth(2).expect("Please specify an item\n");
-    
+
     println!("{:?}, {:?}", action, item);
 
     let mut todo = Todo::new().expect("DB init has failed");
